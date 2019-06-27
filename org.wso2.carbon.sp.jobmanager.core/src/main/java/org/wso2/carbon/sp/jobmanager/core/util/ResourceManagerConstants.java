@@ -90,6 +90,17 @@ public class ResourceManagerConstants {
                     + "                        RESOURCE_MAPPING BLOB NOT NULL,\n"
                     + "                        PRIMARY KEY (GROUP_ID)\n" + ");\n";
 
+    public static final String CREATE_PREVIOUS_SCHEDULING_TABLE =
+            "CREATE TABLE IF NOT EXISTS previous_scheduling_details" +
+                     "(exec int, " +
+                    "parallel varchar(20), " +
+                    "SummaryThroughput double, " +
+                    "Throughput double, " +
+                    "Latency bigint, " +
+                    "Event_Count int, " +
+                    "process_CPU double " +
+        " );";
+
     public static final String PS_REPLACE_RESOURCE_MAPPING_ROW =
             "REPLACE INTO RESOURCE_POOL_TABLE (GROUP_ID, RESOURCE_MAPPING) VALUES (?,?);";
 

@@ -67,10 +67,16 @@ public class MetricsBasedAllocationAlgorithm implements ResourceAllocationAlgori
 
     public void retrieveData(DistributedSiddhiQuery distributedSiddhiQuery,
                              LinkedList<PartialSiddhiApp> partailSiddhiApps) {
+
         List<SiddhiAppHolder> appsToDeploy = getSiddhiAppHolders(distributedSiddhiQuery);
         Connection connection = dbConnector();
         Statement statement = null;
+        double currentSummeryThroughput = 0.0;
+
         try {
+            logger.info("Autocommit enabled ? "+connection.getAutoCommit());
+            logger.info("Client information" +connection.getClientInfo());
+            connection.setAutoCommit(true);
             statement = connection.createStatement();
         } catch (SQLException e) {
             logger.error("Error Creating the Connection", e);
@@ -78,32 +84,29 @@ public class MetricsBasedAllocationAlgorithm implements ResourceAllocationAlgori
         ResultSet resultSet;
         try {
             for (SiddhiAppHolder appHolder : appsToDeploy) {
+                logger.info("Starting partial Siddhi app ......................." + appHolder.getAppName());
                 String[] SplitArray = appHolder.getAppName().split("-");
-
                 int executionGroup = Integer.valueOf(SplitArray[SplitArray.length - 2].substring(5));
-
-                //executionGroup = Integer.valueOf(appHolder.getAppName().substring(appHolder.getAppName().length()-3,
-                //appHolder.getAppName().length()-2));
-
                 int parallelInstance = Integer.valueOf(SplitArray[SplitArray.length - 1]);
 
-                //parallelInstance = Integer.valueOf(appHolder.getAppName().substring(appHolder.getAppName().length()-1));
-
-
+                logger.info("Execution Group = "+ executionGroup);
+                logger.info("Parallel = "+ parallelInstance);
                 logger.info("Metric details of " + appHolder.getAppName() + "\n");
                 logger.info("---------------------------------------------------");
+
                 String query = "SELECT m3 ,m5, m7 ,m16 FROM metricstable where exec=" +
                         executionGroup + " and parallel=" + parallelInstance +
                         " order by iijtimestamp desc limit 1 ";
-                resultSet = statement.executeQuery(query);
 
-                logger.info("Query " + query);
+                resultSet = statement.executeQuery(query);
 
                 if (resultSet.isBeforeFirst()) {     //Check the corresponding partial siddhi app is having the metrics
                     logger.info("Matrics details are found for the partial Siddhi App");
                     while (resultSet.next()) {
 
                         double throughput = resultSet.getDouble("m3");
+                        currentSummeryThroughput += throughput;
+                        logger.info("Current Summary Throughput = " + currentSummeryThroughput);
                         logger.info("Throughput : " + throughput);
 
                         int eventCount = resultSet.getInt("m5");
@@ -115,15 +118,17 @@ public class MetricsBasedAllocationAlgorithm implements ResourceAllocationAlgori
 
                         double processCPU = resultSet.getDouble("m16");
                         logger.info("process CPU : " + processCPU);
-                        if(latency != 0.0){
+                        /*if(latency != 0.0){
                             throughput= 1/latency;
                         }else{
                             logger.info("latency=0@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
-                        }
+                        }*/
 
                         partailSiddhiApps.add(new PartialSiddhiApp(processCPU, (latency), throughput, eventCount, appHolder.getAppName()));
                         logger.info(appHolder.getAppName() + " created with reciprocal of latency : " + (1 / latency) +
                                 " and processCPU : " + processCPU + "\n");
+
+
                     }
                 } else {
                     logger.warn("Metrics are not available for the siddhi app " + appHolder.getAppName()
@@ -145,18 +150,74 @@ public class MetricsBasedAllocationAlgorithm implements ResourceAllocationAlgori
                             ", Throughput :" + throughput +
                             " and processCPU : " + processCPU + "\n");
                 }
+
                 resultSet.close();
-
+                logger.info("finished partial Siddhi app ......................." + appHolder.getAppName());
             }
-            statement.close();
-            connection.close();
-
             if ((metricCounter + 2) > appsToDeploy.size()) {
                 logger.error("Metrics are not available for required number of Partial siddhi apps");
             }
         } catch (SQLException e) {
             logger.error(e);
 
+        }
+        try {
+            LinkedList<PartialSiddhiApp> partialSiddhiApps = switchingFunction(currentSummeryThroughput, partailSiddhiApps);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        insertPreviousData(partailSiddhiApps);
+
+
+    }
+
+    public void insertPreviousData(LinkedList<PartialSiddhiApp> partailSiddhiApps){
+        double summaryThroughput = 0.0;
+        int averageLatency = 0;
+        int totaleventCount = 0;
+        double totalProcessCPU = 0.0;
+        Statement statement = null;
+        Connection connection = dbConnector();
+
+        try {
+            logger.info("Autocommit enabled ? "+connection.getAutoCommit());
+            logger.info("Client information" +connection.getClientInfo());
+            connection.setAutoCommit(true);
+            statement = connection.createStatement();
+        } catch (SQLException e) {
+            logger.error("Error Creating the Connection", e);
+        }
+        ResultSet resultSet;
+
+        for(int i=0; i<partailSiddhiApps.size();i++){
+            summaryThroughput = summaryThroughput + partailSiddhiApps.get(i).getThroughput();
+        }
+        logger.info("Inserting previous scheduling data in to database");
+        try{
+            for (int i = 0; i < partailSiddhiApps.size(); i++){
+                String[] SplitArray = partailSiddhiApps.get(i).getName().split("-");
+                int executionGroup = Integer.valueOf(SplitArray[SplitArray.length - 2].substring(5));
+                int parallelInstance = Integer.valueOf(SplitArray[SplitArray.length - 1]);
+
+                String sql = "INSERT INTO previous_scheduling_details (exec, parallel, SummaryThroughput, Throughput, Latency, Event_Count, process_CPU" +
+                        ")" + "VALUES (" +
+                        executionGroup + "," +
+                        parallelInstance + "," +
+                        summaryThroughput + "," +
+                        partailSiddhiApps.get(i).getThroughput() + ","+
+                        partailSiddhiApps.get(i).getlatency() + "," +
+                        partailSiddhiApps.get(i).getEventCount() + "," +
+                        partailSiddhiApps.get(i).getcpuUsage() +
+                        ");";
+                statement.executeUpdate(sql);
+                logger.info(sql+"SQLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL");
+            }
+            logger.info("Done inserting values to SQL DB");
+
+            statement.close();
+            connection.close();
+        } catch(SQLException e) {
+            logger.error("Error in inserting query . " + e.getMessage());
         }
     }
     public ResourceNode getNextResourceNode(Map<String, ResourceNode> resourceNodeMap,
@@ -212,7 +273,7 @@ public class MetricsBasedAllocationAlgorithm implements ResourceAllocationAlgori
     public void executeKnapsack(Map<String, ResourceNode> resourceNodeMap,
                                 int minResourceCount,
                                 DistributedSiddhiQuery distributedSiddhiQuery) {
-        logger.info("Inside New Knapsack ..............................................");
+        logger.info("Inside Branch and Bound Knapsack ..............................................");
 
         if (deploymentConfig != null && !resourceNodeMap.isEmpty()) {
             if (resourceNodeMap.size() >= minResourceCount) {
@@ -299,4 +360,76 @@ public class MetricsBasedAllocationAlgorithm implements ResourceAllocationAlgori
         }
 
     }
+    public LinkedList<PartialSiddhiApp> switchingFunction(double currentSummeryThroughput, LinkedList<PartialSiddhiApp> partailSiddhiApps) throws SQLException {
+        double previousSummaryThroughput = 0.0;
+        double throughput = 0.0;
+        int eventCount = 0;
+        double latency = 0.0;
+        double processCPU = 0.0;
+        LinkedList<PartialSiddhiApp> newPartialSiddhiApps = new LinkedList<>();
+
+        //Dictionary previousData = new Hashtable();
+        Statement statement = null;
+        Connection connection = dbConnector();
+
+        try {
+            logger.info("Autocommit enabled ? "+connection.getAutoCommit());
+            logger.info("Client information" +connection.getClientInfo());
+            connection.setAutoCommit(true);
+            statement = connection.createStatement();
+        } catch (SQLException e) {
+            logger.error("Error Creating the Connection", e);
+        }
+        ResultSet resultSet;
+         try{
+             String query1 = "SELECT SummaryThroughput FROM previous_scheduling_details";
+
+             resultSet = statement.executeQuery(query1);
+             logger.info("Query " + query1);
+
+             if (resultSet.isBeforeFirst()){
+                 while (resultSet.next()){
+                     previousSummaryThroughput = resultSet.getDouble("SummaryThroughput");
+                     /*previousData.put("Throughput", resultSet.getDouble("Throughput"));
+                     previousData.put("Process CPU", resultSet.getInt("process_CPU"));*/
+                 }
+             }
+             logger.info("Previous summary throughput ################################################ = " + previousSummaryThroughput);
+
+         }catch (SQLException e) {
+             logger.error(e);
+         }
+         if ((previousSummaryThroughput - currentSummeryThroughput) > 5.0){
+             for (int i = 0; i < partailSiddhiApps.size(); i++ ){
+                 String[] SplitArray = partailSiddhiApps.get(i).getName().split("-");
+                 int executionGroup = Integer.valueOf(SplitArray[SplitArray.length - 2].substring(5));
+
+                 String query = "SELECT Throughput, Latency, Event_Count, process_CPU FROM previous_scheduling_details where exec = "+executionGroup + "";
+                 resultSet = statement.executeQuery(query);
+                 logger.info("Query " + query);
+
+                 if (resultSet.isBeforeFirst()){
+                     while (resultSet.next()){
+                         throughput = resultSet.getDouble("Throughput");
+                         eventCount = resultSet.getInt("Event_Count");
+                         latency = resultSet.getLong("Latency");
+                         processCPU = resultSet.getDouble("process_CPU");
+                     }
+                 }
+                 newPartialSiddhiApps.add(new PartialSiddhiApp(processCPU,
+                         latency,
+                         throughput,
+                         eventCount,
+                         partailSiddhiApps.get(i).getName()
+                 ));
+             }
+             //partailSiddhiApps.clear();
+             partailSiddhiApps = newPartialSiddhiApps;
+             newPartialSiddhiApps.clear();
+         }
+         statement.executeUpdate("TRUNCATE previous_scheduling_details");
+         statement.close();
+         connection.close();
+         return partailSiddhiApps;
+         }
 }
