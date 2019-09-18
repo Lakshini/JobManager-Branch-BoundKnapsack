@@ -1,5 +1,5 @@
 Manifest-Version: 1.0
-Bnd-LastModified: 1568800740108
+Bnd-LastModified: 1568801143842
 Build-Jdk: 1.8.0_201
 Built-By: madushi
 Bundle-Contributors: WSO2 Inc
@@ -247,7 +247,7 @@ Require-Capability: osgi.service;effective:=active;filter:="(objectClass
  api.AnalyticsHttpClientBuilderService)",osgi.service;effective:=active;
  filter:="(objectClass=org.wso2.carbon.datasource.core.api.DataSourceSer
  vice)",osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=1.8))"
-SCM-Revision: eab5d2c7e9ee643c437d8df2488d2960e5a3916b
+SCM-Revision: 41a82206d130360068f472665cc4720f8e0cd94b
 Service-Component: OSGI-INF/org.wso2.carbon.sp.jobmanager.core.api.Manag
  ersApi.xml,OSGI-INF/org.wso2.carbon.sp.jobmanager.core.api.WorkersApi.x
  ml,OSGI-INF/org.wso2.carbon.sp.jobmanager.core.impl.ManagersApiServiceI
