@@ -1,4 +1,4 @@
 # SP-Jobmanager
-This is a WSO2 Carbon Analytics SP Jobmanager Package with a MetricBasedAllocationAlgorithm
-
-This algorithm get the metrics of the application and reschedule the partial siddhi apps according to those metrics.
+An advanced job scheduler for distributed stream processor to allocated partial Siddhi applications among
+the workers to get the optimal throughput performance under the resource constraints we considered. The proposed scheduler
+has been implemented using Knapsack algorithm with branch and bound based heuristic method.
